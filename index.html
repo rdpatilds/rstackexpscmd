@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks</title>
+<style>
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 32rem;
+    margin: 3rem auto;
+    padding: 0 1rem;
+    color: #222;
+    line-height: 1.4;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+  #add-form { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  #new-task, .edit { flex: 1; font: inherit; padding: 0.4rem 0.6rem; }
+  button { font: inherit; padding: 0.4rem 0.8rem; cursor: pointer; }
+  #tasks { list-style: none; margin: 0; padding: 0; }
+  .task {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #ddd;
+  }
+  .title { flex: 1; }
+  .done .title { text-decoration: line-through; color: #888; }
+  #empty { color: #888; }
+</style>
+</head>
+<body>
+<h1>Tasks</h1>
+<form id="add-form">
+  <input id="new-task" type="text" placeholder="What needs doing?" autocomplete="off">
+  <button type="submit">Add</button>
+</form>
+<ul id="tasks"></ul>
+<p id="empty">No tasks yet.</p>
+<script>
+// Task = { id: string, title: string, done: boolean }
+// tasks: Task[]          persisted under localStorage key 'tasks' as JSON
+// editingId: string|null  UI-only, never persisted; at most one row edits at a time
+const form = document.getElementById('add-form')
+const newTask = document.getElementById('new-task')
+const list = document.getElementById('tasks')
+const empty = document.getElementById('empty')
+
+let tasks = load()
+let editingId = null
+
+function load() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('tasks'))
+    const valid = Array.isArray(parsed) && parsed.every(t =>
+      t && typeof t.id === 'string' && typeof t.title === 'string' && typeof t.done === 'boolean')
+    return valid ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function addTask(list, title) {
+  const trimmed = title.trim()
+  return trimmed ? [...list, { id: crypto.randomUUID(), title: trimmed, done: false }] : list
+}
+
+function renameTask(list, id, title) {
+  const trimmed = title.trim()
+  return trimmed ? list.map(t => t.id === id ? { ...t, title: trimmed } : t) : list
+}
+
+function toggleTask(list, id) {
+  return list.map(t => t.id === id ? { ...t, done: !t.done } : t)
+}
+
+function removeTask(list, id) {
+  return list.filter(t => t.id !== id)
+}
+
+function commit(next) {
+  tasks = next
+  localStorage.setItem('tasks', JSON.stringify(tasks))
+  render()
+}
+
+function el(tag, props, action) {
+  const node = Object.assign(document.createElement(tag), props)
+  if (action) node.dataset.action = action
+  return node
+}
+
+function renderTask(task) {
+  const li = el('li', { className: task.done ? 'task done' : 'task' })
+  li.dataset.id = task.id
+  const title = editingId === task.id
+    ? el('input', { type: 'text', className: 'edit', value: task.title }, 'edit-input')
+    : el('span', { className: 'title', textContent: task.title })
+  li.append(
+    el('input', { type: 'checkbox', checked: task.done }, 'toggle'),
+    title,
+    el('button', { textContent: 'Edit' }, 'edit'),
+    el('button', { textContent: 'Delete' }, 'delete'),
+  )
+  return li
+}
+
+function render() {
+  list.replaceChildren(...tasks.map(renderTask))
+  empty.hidden = tasks.length > 0
+  list.querySelector('.edit')?.focus()
+}
+
+function saveEdit(input) {
+  const id = input.closest('li').dataset.id
+  // Re-rendering removes the focused input, which fires focusout after Enter or Escape already resolved the edit.
+  if (editingId !== id) return
+  editingId = null
+  commit(renameTask(tasks, id, input.value))
+}
+
+function cancelEdit() {
+  editingId = null
+  render()
+}
+
+form.addEventListener('submit', e => {
+  e.preventDefault()
+  commit(addTask(tasks, newTask.value))
+  newTask.value = ''
+})
+
+list.addEventListener('click', e => {
+  const action = e.target.dataset.action
+  if (action !== 'edit' && action !== 'delete') return
+  const id = e.target.closest('li').dataset.id
+  if (action === 'edit') {
+    editingId = id
+    render()
+  } else {
+    commit(removeTask(tasks, id))
+  }
+})
+
+list.addEventListener('change', e => {
+  if (e.target.dataset.action === 'toggle') commit(toggleTask(tasks, e.target.closest('li').dataset.id))
+})
+
+list.addEventListener('keydown', e => {
+  if (e.target.dataset.action !== 'edit-input') return
+  if (e.key === 'Enter') saveEdit(e.target)
+  if (e.key === 'Escape') cancelEdit()
+})
+
+list.addEventListener('focusout', e => {
+  if (e.target.dataset.action === 'edit-input') saveEdit(e.target)
+})
+
+render()
+</script>
+</body>
+</html>
